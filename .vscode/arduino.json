@@ -1,0 +1,7 @@
+{
+    "board": "arduino:avr:pro",
+    "configuration": "cpu=16MHzatmega328",
+    "programmer": "Arduino as ISP",
+    "sketch": "arduino-sht31-onewire.ino",
+    "port": "/dev/ttyUSB0"
+}

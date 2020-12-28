@@ -1,0 +1,28 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "/home/raintonr/Arduino/libraries/OneWireHub/src",
+                "/opt/arduino/arduino-1.8.13/tools/**",
+                "/home/raintonr/Arduino/libraries/**",
+                "/opt/arduino/arduino-1.8.13/libraries/**",
+                "/opt/arduino/arduino-1.8.13/hardware/tools/**",
+                "/opt/arduino/arduino-1.8.13/hardware/arduino/avr/**"
+            ],
+            "forcedInclude": [
+                "/opt/arduino/arduino-1.8.13/hardware/arduino/avr/cores/arduino/Arduino.h"
+            ],
+            "defines": [
+                "USBCON",
+                "ARDUINO",
+                "__AVR__"
+            ],
+            "intelliSenseMode": "gcc-x64",
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c17",
+            "cppStandard": "c++14"
+        }
+    ],
+    "version": 4
+}
