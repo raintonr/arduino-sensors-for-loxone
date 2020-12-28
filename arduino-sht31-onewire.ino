@@ -56,9 +56,11 @@ boolean first = true;
 int current_slot = 0;
 
 void zero1w(DS2438 *device) {
-  device->setCurrent((int16_t) 0);
-  device->setVoltage((uint16_t) 0);
+  // Zero out, but according to what we think 'zero' is ;)
   device->setTemperature((int8_t) 0);
+  device->setVDDVoltage((uint16_t) 512);
+  device->setVADVoltage((uint16_t) 512);
+  device->setCurrent((int16_t) -1023);
 }
 
 void error_flash(int ms) {
@@ -223,8 +225,8 @@ void loop() {
       #ifdef DEBUG
         Serial.print("Using old values from slot "); Serial.println(period_slot);
       #endif
-      ds2438->setVoltage(delta_calc(temperature, deltas[period_slot].temperature));
-      ds2438->setVoltage(delta_calc(humidity, deltas[period_slot].humidity));
+      ds2438->setVDDVoltage(delta_calc(temperature, deltas[period_slot].temperature));
+      ds2438->setVADVoltage(delta_calc(humidity, deltas[period_slot].humidity));
     }
   }
 
@@ -236,13 +238,6 @@ void loop() {
   current_slot = next_slot(current_slot);
 
   ds2438->setTemperature(temperature);
-
-  // Testing VAD & VDD
-  uint16_t delta;
-  delta = current_slot + 1;
-  ds2438->setVoltage(delta);
-  delta *= 10;
-  ds2438->setVoltage(delta);
   
   // Have to scale humidity to fit in current (between -1023 & +1023)
   // So divide multiply by 20.46 and subtract 1023
