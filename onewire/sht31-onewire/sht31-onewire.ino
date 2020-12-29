@@ -1,10 +1,8 @@
-#include <EEPROM.h>
-#include "OneWireHub.h"
-#include "DS2438.h"
-#include <TrueRandom.h>
-#include "Adafruit_SHT31.h"
+#include <DS2438.h>
+#include <Adafruit_SHT31.h>
 
-//#define DEBUG
+// To turn on DEBUG, define it in the common header:
+#include <onewire-common.h>
 
 // 1-Wire pin
 #define PIN_ONE_WIRE 11
@@ -16,6 +14,7 @@
 #define DELTA_INTERVAL 60000
 
 // So how many readings do we need to store?
+// Should be DELTA_INTERVAL / DELTA_INTERVAL + 1
 #define DELTA_COUNT 21
 
 // And rolling buffer
@@ -34,26 +33,11 @@ OneWireHub hub = OneWireHub(PIN_ONE_WIRE);
 DS2438 *ds2438;
 
 // 1W address
-uint8_t addr_1w[7] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-
-// Prints the device address to console
-#ifdef DEBUG
-  void dumpAddress(const char *prefix, const OneWireItem *item, const char *postfix) {
-    Serial.print(prefix);
-    
-    for (int i = 0; i < 8; i++) {
-        Serial.print(item->ID[i] < 16 ? "0":"");
-        Serial.print(item->ID[i], HEX);
-        Serial.print((i < 7)?".":"");
-    }
-
-    Serial.println(postfix);
-  }
-#endif
+uint8_t addr_1w[7];
 
 // Starting conditions
 boolean first = true;
-int current_slot = 0;
+int8_t current_slot = 0;
 
 void zero1w(DS2438 *device) {
   // Zero out, but according to what we think 'zero' is ;)
@@ -61,14 +45,6 @@ void zero1w(DS2438 *device) {
   device->setVDDVoltage((uint16_t) 512);
   device->setVADVoltage((uint16_t) 512);
   device->setCurrent((int16_t) -1023);
-}
-
-void error_flash(int ms) {
-  unsigned long stopFlash = millis() + ms;
-  while (stopFlash > millis()) {
-    digitalWrite(LED_BUILTIN, (millis() % 40 < 10) ? 1 : 0);
-  }
-  digitalWrite(LED_BUILTIN, 0);
 }
 
 void setup() {
@@ -87,25 +63,7 @@ void setup() {
     while (1) delay(1);
   }
 
-  if (EEPROM.read(0) == '#') {
-    // 1W address storred in EEPROM
-    #ifdef DEBUG    
-      Serial.println("Reading 1W address from EEPROM");
-    #endif
-    for (int lp = 1; lp < 7; lp++) {
-        addr_1w[lp] = EEPROM.read(lp);
-    }
-  } else {
-    // 1W address not set, generate random value
-    #ifdef DEBUG    
-      Serial.println("Generating random 1W address");
-    #endif
-    for (int lp = 1; lp < 7; lp++) {
-        addr_1w[lp] = TrueRandom.random(256);
-        EEPROM.write(lp, addr_1w[lp]);
-    }
-    EEPROM.write(0, '#');
-  }
+  get_address(addr_1w);
 
   ds2438 = new DS2438(DS2438::family_code, addr_1w[1], addr_1w[2], addr_1w[3], addr_1w[4], addr_1w[5], addr_1w[6]);
   zero1w(ds2438);
@@ -117,19 +75,26 @@ void setup() {
 }
 
 // Function to return number of next/prev slots (just inc/dec but account for wrap).
-int next_slot(int slot) {
+int8_t next_slot(int8_t slot) {
   return (++slot) % DELTA_COUNT;
 }
-int prev_slot(int slot) {
+int8_t prev_slot(int8_t slot) {
   return (slot > 0) ? (slot - 1) : (DELTA_COUNT - 1);
 }
 
-int find_interval_reading(unsigned long old_stamp) {
+// You'd think that one could just use the oldest slot but... timing of
+// hub.poll isn't guaranteed to be 'quick' so it's possible that it could delay
+// things and that we should use one of the previous slots.
+//
+// Yes, this is a little convoluted/complicated but really - what else is this
+// CPU gonna be doing? ;)
+
+int8_t find_interval_reading(unsigned long old_stamp) {
   #ifdef DEBUG
     Serial.print("Looking for reading before "); Serial.println(old_stamp);
   #endif
-  int found_slot = -1;
-  int check_slot = prev_slot(current_slot);
+  int8_t found_slot = -1;
+  int8_t check_slot = prev_slot(current_slot);
   do {
     // To match, must be older than interval, but not too old to stop wrapping timestamps
     if (deltas[check_slot].timestamp < old_stamp && old_stamp - deltas[check_slot].timestamp < DELTA_INTERVAL * 2) {
@@ -205,7 +170,7 @@ void loop() {
 
   if (first) {
     // Fill up the delta buffer with initial values
-    for (int lp = 0; lp < DELTA_COUNT; lp++) {
+    for (int8_t lp = 0; lp < DELTA_COUNT; lp++) {
       deltas[lp].timestamp = this_stamp;
       deltas[lp].temperature = temperature;
       deltas[lp].humidity = humidity;
@@ -214,7 +179,7 @@ void loop() {
     first = false;
   } else {
     // Find a value old enough to create delta from
-    int period_slot = find_interval_reading(this_stamp - DELTA_INTERVAL);
+    int8_t period_slot = find_interval_reading(this_stamp - DELTA_INTERVAL);
 
     if (period_slot < 0) {
       // No slot old enough found

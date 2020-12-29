@@ -3,15 +3,15 @@
         {
             "name": "Linux",
             "includePath": [
-                "/home/raintonr/Arduino/libraries/OneWireHub/src",
-                "/opt/arduino/arduino-1.8.13/tools/**",
-                "/home/raintonr/Arduino/libraries/**",
-                "/opt/arduino/arduino-1.8.13/libraries/**",
-                "/opt/arduino/arduino-1.8.13/hardware/tools/**",
-                "/opt/arduino/arduino-1.8.13/hardware/arduino/avr/**"
+                "${HOME}/Arduino/libraries/**",
+                "${workspaceFolder}/library/arduino-sensors-for-loxone",
+                "/opt/arduino/arduino/tools/**",
+                "/opt/arduino/arduino/libraries/**",
+                "/opt/arduino/arduino/hardware/tools/**",
+                "/opt/arduino/arduino/hardware/arduino/avr/**"
             ],
             "forcedInclude": [
-                "/opt/arduino/arduino-1.8.13/hardware/arduino/avr/cores/arduino/Arduino.h"
+                "/opt/arduino/arduino/hardware/arduino/avr/cores/arduino/Arduino.h"
             ],
             "defines": [
                 "USBCON",
