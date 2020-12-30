@@ -32,9 +32,6 @@ Adafruit_SHT31 sht31 = Adafruit_SHT31();
 OneWireHub hub = OneWireHub(PIN_ONE_WIRE);
 DS2438 *ds2438;
 
-// 1W address
-uint8_t addr_1w[7];
-
 // Starting conditions
 boolean first = true;
 int8_t current_slot = 0;
@@ -63,15 +60,16 @@ void setup() {
     while (1) delay(1);
   }
 
+  // 1W address
+  uint8_t addr_1w[7];
   get_address(addr_1w);
 
   ds2438 = new DS2438(DS2438::family_code, addr_1w[1], addr_1w[2], addr_1w[3], addr_1w[4], addr_1w[5], addr_1w[6]);
-  zero1w(ds2438);
-  hub.attach(*ds2438);
-
   #ifdef DEBUG
     dumpAddress("1-Wire DS2438 address: ", ds2438, "");
   #endif
+  zero1w(ds2438);
+  hub.attach(*ds2438);
 }
 
 // Function to return number of next/prev slots (just inc/dec but account for wrap).
