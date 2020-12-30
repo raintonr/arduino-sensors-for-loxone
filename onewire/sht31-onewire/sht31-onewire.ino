@@ -17,6 +17,11 @@
 // Should be DELTA_INTERVAL / DELTA_INTERVAL + 1
 #define DELTA_COUNT 21
 
+// How many degrees/percentage humidity points will equate to +/- full range for delta values
+// Ie. a value of 10 here indicates full range in the delta values signify -5 to +5
+#define TEMPERATURE_DELTA_RANGE 20
+#define HUMIDITY_DELTA_RANGE 100
+
 // And rolling buffer
 struct Reading {
   unsigned long timestamp;
@@ -108,26 +113,25 @@ int8_t find_interval_reading(unsigned long old_stamp) {
   return found_slot;
 }
 
-// Function to place current reading in slot and work out delta
+// Calculate out delta based on supplied range (so each reading can have different sensitivity).
 
-uint16_t delta_calc(float current_value, float old_value) {
-  float absolute_delta = current_value - old_value;
-  float pct_delta = absolute_delta / (old_value / 100);
+uint16_t delta_calc(float current_value, float old_value, float range) {
+  float abs_delta = current_value - old_value;
 
   #ifdef DEBUG
     Serial.print("Old: "); Serial.print(old_value);
     Serial.print(" New: "); Serial.print(current_value);
-    Serial.print(" Abs: "); Serial.print(absolute_delta);
-    Serial.print(" Pct: "); Serial.print(pct_delta);
+    Serial.print(" Abs: "); Serial.print(abs_delta);
   #endif
 
-  // Delta percent needs to be 0 -> 1023 so scale 10.23x
-  // 0 -> 1023 becomes -50% -> +50%
-  pct_delta *= 10.23;
-  pct_delta += 512;
+  // Delta needs to be 0 -> 1023
+  // Depends on range: 0 -> 1023 becomes -range -> +range
+  abs_delta *= 1024;
+  abs_delta /= range;
+  abs_delta += 512;
 
   // Cast to final return value (within limits)
-  uint16_t delta = pct_delta < 0 ? 0 : pct_delta > 1023 ? 1023 : pct_delta;
+  uint16_t delta = abs_delta < 0 ? 0 : abs_delta > 1023 ? 1023 : abs_delta;
   #ifdef DEBUG
     Serial.print(" Int: "); Serial.println(delta);
   #endif
@@ -188,8 +192,8 @@ void loop() {
       #ifdef DEBUG
         Serial.print("Using old values from slot "); Serial.println(period_slot);
       #endif
-      ds2438->setVDDVoltage(delta_calc(temperature, deltas[period_slot].temperature));
-      ds2438->setVADVoltage(delta_calc(humidity, deltas[period_slot].humidity));
+      ds2438->setVDDVoltage(delta_calc(temperature, deltas[period_slot].temperature, TEMPERATURE_DELTA_RANGE));
+      ds2438->setVADVoltage(delta_calc(humidity, deltas[period_slot].humidity, HUMIDITY_DELTA_RANGE));
     }
   }
 
