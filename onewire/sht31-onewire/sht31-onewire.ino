@@ -57,12 +57,12 @@ void setup() {
 
   error_flash(1000);
 
-  if (!sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
+  // In case sensor is not connected at startup, loop round looking for it
+  while (!sht31.begin(0x44)) {   // Set to 0x45 for alternate i2c addr
     #ifdef DEBUG    
       Serial.println("Couldn't find SHT31");
     #endif
-    digitalWrite(LED_BUILTIN, 1);
-    while (1) delay(1);
+    error_flash(READ_INTERVAL - 500, 500);
   }
 
   // 1W address
@@ -159,16 +159,26 @@ void loop() {
     Serial.print("Slot: "); Serial.println(current_slot);
   #endif
   
-  float temperature = sht31.readTemperature();
-  float humidity = sht31.readHumidity();
-  if (isnan(temperature) || isnan(humidity)) {
-    // Something bad - flash LED and return
-    error_flash(2000);
-    #ifdef DEBUG
-      Serial.println("Failed to read sensor");
-    #endif
-    return;
-  }
+  // Read sensor in a loop until good reading is found. This way, if the SHT sensor
+  // fails we will not respond to 1-Wire bus with bad data and master will know
+  // something is wrong.
+  boolean good_reading = false;
+  float temperature;
+  float humidity;
+  do {
+    temperature = sht31.readTemperature();
+    humidity = sht31.readHumidity();
+    if (isnan(temperature) || isnan(humidity)) {
+      // Something bad - flash LED and return
+      error_flash(READ_INTERVAL - 100, 100);
+      #ifdef DEBUG
+        Serial.println("Failed to read sensor");
+      #endif
+      return;
+    } else {
+      good_reading = true;
+    }
+  } while (!good_reading);
 
   if (first) {
     // Fill up the delta buffer with initial values
