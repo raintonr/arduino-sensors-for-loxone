@@ -23,12 +23,17 @@ void get_address(uint8_t *addr_1w) {
 
 // Flash our LED to indicate an error
 
-void error_flash(int ms) {
+void error_flash(uint16_t ms) {
   unsigned long stopFlash = millis() + ms;
   while (stopFlash > millis()) {
     digitalWrite(LED_BUILTIN, (millis() % 40 < 10) ? 1 : 0);
   }
   digitalWrite(LED_BUILTIN, 0);
+}
+
+void error_flash(uint16_t flash, uint16_t wait) {
+  error_flash(flash);
+  delay(wait);
 }
 
 // Prints the device address to console
