@@ -11,9 +11,9 @@ Currently provided:
 
 https://github.com/raintonr/OneWireHub/tree/issue/65/DS2438Loxone
 
-# Sensors supported by Loxone & their resolution 
+## Sensors supported by Loxone & their resolution 
 
 - DS1822: 1 x 12 bit
 - DS18B20: 1 x 12 bit
 - DS18S20: 1 x 9 bit
-- DS2438: 1 x 12 bit, 2 x 10 bit, 1 x 9 bit
+- DS2438: 1 x 13 bit, 1 x 11 bit, 2 x 10 bit
