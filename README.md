@@ -10,3 +10,10 @@ Currently provided:
 **Note:** [OneWireHub](https://github.com/orgua/OneWireHub/) DS2438 emulation with Loxone was fixed with PR [#97](https://github.com/orgua/OneWireHub/pull/97). Until that is merged, use this alternate branch of the OneWireHub library:
 
 https://github.com/raintonr/OneWireHub/tree/issue/65/DS2438Loxone
+
+# Sensors supported by Loxone & their resolution 
+
+- DS1822: 1 x 12 bit
+- DS18B20: 1 x 12 bit
+- DS18S20: 1 x 9 bit
+- DS2438: 1 x 12 bit, 2 x 10 bit, 1 x 9 bit
