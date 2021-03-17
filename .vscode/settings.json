@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.tcc": "cpp",
+        "cmath": "cpp"
+    },
+    "cSpell.words": [
+        "TVOC",
+        "millis",
+        "println"
+    ]
+}

@@ -1,6 +1,6 @@
 #include <EEPROM.h>
 #include <TrueRandom.h>
-#include "onewire-common.h"
+#include <onewire-common.h>
 
 void get_address(uint8_t *addr_1w) {
   if (EEPROM.read(0) == '#') {
@@ -14,7 +14,9 @@ void get_address(uint8_t *addr_1w) {
     // 1W address not set, generate random value
     Serial.println("Generating random 1W address");
     for (int lp = 1; lp < 7; lp++) {
-        addr_1w[lp] = TrueRandom.random(256);
+        // Don't allow the last byte of the address to be too high to account
+        // for when more than one sensor is presented from a single device.
+        addr_1w[lp] = TrueRandom.random(lp < 6 ? 256 : 256 - MAX_ONEWIRE_SENSORS);
         EEPROM.write(lp, addr_1w[lp]);
     }
     EEPROM.write(0, '#');
