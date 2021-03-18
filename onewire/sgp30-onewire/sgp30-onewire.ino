@@ -21,11 +21,12 @@ Adafruit_SGP30 sgp30;
 #define READ_INTERVAL 3000
 
 // How often to record the SGP30 baseline (in ms)
-#define BASELINE_INTERVAL 14400000  // 4 hours
+#define BASELINE_INTERVAL 28800000  // 8 hours
 
 // Bytes 0-7 are reserved for 1 wire address so put define EEPROM address to
 // store baseline after that
 #define BASELINE_ADDRESS 16
+#define BASELINE_MARKER '@'
 
 // Init Hub
 OneWireHub hub = OneWireHub(PIN_ONE_WIRE);
@@ -60,17 +61,17 @@ void setup() {
 
   init_sgp30(&sgp30);
   int address = BASELINE_ADDRESS;
-  if (EEPROM.read(address++) == '#') {
+  if (EEPROM.read(address++) == BASELINE_MARKER) {
     // Looks like we have previously stored baseline available
     uint16_t eCO2_base, TVOC_base;
 
     eCO2_base = EEPROM.read(address + 1);
-    eCO2_base << 8;
+    eCO2_base <<= 8;
     eCO2_base += EEPROM.read(address);
     address += 2;
 
     TVOC_base = EEPROM.read(address + 1);
-    TVOC_base << 8;
+    TVOC_base <<= 8;
     TVOC_base += EEPROM.read(address);
 
 #ifdef DEBUG
@@ -106,39 +107,13 @@ void setup() {
   hub.attach(*ds2438_sht31);
 }
 
-// To calculate an Indoor Air Quality (IAQ) index from 0-500...
-//
-// TVOC (ppb) -> Maps to our IAQ
-// 0-333      0-100
-// 333-1000   100-200
-// 1000-3333  200-300
-// 3333-8332  300-400
-// 8332+      400-
-//
-// CO2 (ppm)  -> Maps to our IAQ
-// -600       0-100
-// 600-1000   100-200
-// 1000-1500  200-300
-// 1500-2500  300-400
-// 2500+      400-
-//
-// This is basically the bands from Awair:
-//
-// https://support.getawair.com/hc/en-us/articles/360039242373-Air-Quality-Factors-Measured-By-Awair-Element
-//
-// Use a functional approximation calculator to convert the above tables
-// into approximation for our IAQ. This yields:
-// - TVOC IAQ = -435.2193+91.8051*ln(x)
-// - CO2 IAQ = -1264.0655+212.9341*ln(x)
-//
-
 // Class to perform Logarithmic regression
 
-class LogarithmicRegression {
+class LogarithmicRegressionCalculator {
   float add, mult;
 
  public:
-  LogarithmicRegression(float add_init, float mult_init) {
+  LogarithmicRegressionCalculator(float add_init, float mult_init) {
     add = add_init;
     mult = mult_init;
   }
@@ -156,10 +131,26 @@ class LogarithmicRegression {
   }
 };
 
-// ... and declare for TVOC & CO2 values
+// To calculate an Indoor Air Quality (IAQ) index from 0-500...
+//
+//      TVOC (ppb): 100 333 1000 3333 8332
+// Maps to our IAQ: 10 100 200 300 400
+//
+//       CO2 (ppm): 400 600 1000 1500 2500
+// Maps to our IAQ: 10 100 200 300 400
+//
+// This is basically the bands from Awair:
+//
+// https://support.getawair.com/hc/en-us/articles/360039242373-Air-Quality-Factors-Measured-By-Awair-Element
+//
+// Use a functional approximation calculator to convert the above tables
+// into approximation for our IAQ. This yields:
+// - TVOC IAQ = -402.3294+87.6842*ln(x)
+// - CO2 IAQ = -1269.4589+213.6673*ln(x)
+//
 
-LogarithmicRegression TVOC_LR(-435.2193, 91.8051);
-LogarithmicRegression CO2_LR(-1264.0655, 212.9341);
+LogarithmicRegressionCalculator TVOC_LR(-402.3294, 87.6842);
+LogarithmicRegressionCalculator CO2_LR(-1269.4589, 213.6673);
 
 // Main loop
 
@@ -225,11 +216,11 @@ void loop() {
   // - IAQ index -> VDD Voltage (10 bit)
 
   // CO2 goes into sensor's current (11 bits) but as minimal reading is 400,
-  // offset by that so in Loxone we get: 
+  // offset by that so in Loxone we get:
   // -0.25 -> 400
   // 0.25 -> 2447
   int16_t eCO2 = sgp30.eCO2;
-  eCO2 -= 1423; // 400 + 1023
+  eCO2 -= 1423;  // 400 + 1023
 #ifdef DEBUG
   Serial.print("\tDS2438 eCO2: ");
   Serial.print(eCO2);
@@ -299,16 +290,14 @@ void loop() {
   next_baseline = this_stamp + BASELINE_INTERVAL;
 
   // And stash in EEPROM
-  // Bytes 0-7 are reserved for 1 wire address so put these baselines in
-  // address 16...
   int address = BASELINE_ADDRESS;
-  EEPROM.update(address++, '#');  // Indicator the following is value is good
+  EEPROM.update(address++, BASELINE_MARKER);  // Indicator the following is value is good
 
   EEPROM.update(address++, eCO2_base & 0xff);
-  eCO2_base >> 8;
+  eCO2_base >>= 8;
   EEPROM.update(address++, eCO2_base & 0xff);
 
   EEPROM.update(address++, TVOC_base & 0xff);
-  TVOC_base >> 8;
+  TVOC_base >>= 8;
   EEPROM.update(address++, TVOC_base & 0xff);
 }
