@@ -200,4 +200,7 @@ void loop() {
 
   ds2438->setTemperature(temperature);
   set_sht31_humidity(ds2438, humidity);
+#ifdef DEBUG
+  Serial.println("");
+#endif
 }
