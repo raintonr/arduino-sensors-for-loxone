@@ -3,6 +3,6 @@
     "output": "/tmp/arduino-output",
     "programmer": "Arduino as ISP",
     "sketch": "onewire/sgp30-onewire/sgp30-onewire.ino",
-    "port": "/dev/ttyUSB1",
+    "port": "/dev/ttyUSB0",
     "configuration": "cpu=16MHzatmega328"
 }
