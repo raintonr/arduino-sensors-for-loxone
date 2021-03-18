@@ -21,7 +21,7 @@ Adafruit_SGP30 sgp30;
 #define READ_INTERVAL 3000
 
 // How often to record the SGP30 baseline (in ms)
-#define BASELINE_INTERVAL 1000 * 60 * 60 * 4  // 4 hours
+#define BASELINE_INTERVAL 14400000  // 4 hours
 
 // Bytes 0-7 are reserved for 1 wire address so put define EEPROM address to
 // store baseline after that
@@ -106,6 +106,61 @@ void setup() {
   hub.attach(*ds2438_sht31);
 }
 
+// To calculate an Indoor Air Quality (IAQ) index from 0-500...
+//
+// TVOC (ppb) -> Maps to our IAQ
+// 0-333      0-100
+// 333-1000   100-200
+// 1000-3333  200-300
+// 3333-8332  300-400
+// 8332+      400-
+//
+// CO2 (ppm)  -> Maps to our IAQ
+// -600       0-100
+// 600-1000   100-200
+// 1000-1500  200-300
+// 1500-2500  300-400
+// 2500+      400-
+//
+// This is basically the bands from Awair:
+//
+// https://support.getawair.com/hc/en-us/articles/360039242373-Air-Quality-Factors-Measured-By-Awair-Element
+//
+// Use a functional approximation calculator to convert the above tables
+// into approximation for our IAQ. This yields:
+// - TVOC IAQ = -435.2193+91.8051*ln(x)
+// - CO2 IAQ = -1264.0655+212.9341*ln(x)
+//
+
+// Class to perform Logarithmic regression
+
+class LogarithmicRegression {
+  float add, mult;
+
+ public:
+  LogarithmicRegression(float add_init, float mult_init) {
+    add = add_init;
+    mult = mult_init;
+  }
+
+ public:
+  float calc(float x) {
+    float y = 0;
+    if (x > 0) {
+      y = log(x);
+      y *= mult;
+      y += add;
+      if (y < 0) y = 0;
+    }
+    return y;
+  }
+};
+
+// ... and declare for TVOC & CO2 values
+
+LogarithmicRegression TVOC_LR(-435.2193, 91.8051);
+LogarithmicRegression CO2_LR(-1264.0655, 212.9341);
+
 // Main loop
 
 // Always read immediately
@@ -162,17 +217,19 @@ void loop() {
   // - TVOC: 0-60000ppb
   // - CO2: 400-60000ppm
   //
-  // It's pointless returning very high values because those are 'off the scale'
-  // bad. Within the outputs of a DS2438 a reasonable solution for translation
-  // would be:
+  // It's pointless returning very high values because those are 'off the
+  // scale' bad. Within the outputs of a DS2438 a reasonable solution for
+  // translation would be:
   // - CO2       -> Current (11 bit)
   // - TVOC      -> Temperature (13 bit)
   // - IAQ index -> VDD Voltage (10 bit)
 
   // CO2 goes into sensor's current (11 bits) but as minimal reading is 400,
-  // offset by that So in Loxone we get: -0.25 -> 400 0.25 -> 2447
+  // offset by that so in Loxone we get: 
+  // -0.25 -> 400
+  // 0.25 -> 2447
   int16_t eCO2 = sgp30.eCO2;
-  eCO2 -= 400;
+  eCO2 -= 1423; // 400 + 1023
 #ifdef DEBUG
   Serial.print("\tDS2438 eCO2: ");
   Serial.print(eCO2);
@@ -193,59 +250,15 @@ void loop() {
 #endif
   ds2438_sgp30->setTemperature(TVOC);
 
-  // Calculate Indoor Air Quality (IAQ) index from 0-500.
-  //
-  // German Federal Environmental Agency has a translation from TVOC (in ppb) to
-  // quality as follows:
-  //
-  // TVOC (ppb) -> Quality level -> Maps to our IAQ
-  // 0-65        Excellent        0-100
-  // 65-220      Good             100-200
-  // 220-660     Moderate         200-300
-  // 660-2200    Poor             300-400
-  // 2200+       Unhealthy        400-500
-  //
-  // Source: https://help.atmotube.com/faq/5-iaq-standards/
-  //
-  // CO2 (ppm)  -> Quality level -> Maps to our IAQ
-  // 350-450       Fresh air        0-100
-  // 450-1000      Normal level     100-200
-  // 1000-2500     Drowsiness       200-300
-  // 2500-5000     Negative impact  300-400
-  // 5000+         Unhealthy        400-500
-  //
-  // Source: https://axiomet.eu/gb/en/page/1954/air-quality-monitoring-indoors/
-  //
-  // Also see
-  // https://support.getawair.com/hc/en-us/articles/360039242373-Air-Quality-Factors-Measured-By-Awair-Element
-  //
-  // Use a functional approximation calculator to convert the above tables into
-  // approximation for our IAQ. This yields:
-  // - TVOC IAQ = -277.9028+89.268*ln(x)
-  // - CO2 IAQ = -649.3209+122.5306*ln(x)
-  //
-
-  float IAQ_TVOC = sgp30.TVOC;
-  if (IAQ_TVOC > 0) {
-    IAQ_TVOC = log(IAQ_TVOC);
-    IAQ_TVOC *= 89.268;
-    IAQ_TVOC -= 277.9028;
-    if (IAQ_TVOC < 0) IAQ_TVOC = 0;
-  }
-
-  float IAQ_CO2 = sgp30.eCO2;
-  if (IAQ_CO2 > 0) {
-    IAQ_CO2 = log(IAQ_CO2);
-    IAQ_CO2 *= 122.5306;
-    IAQ_CO2 -= 649.3209;
-    if (IAQ_CO2 < 0) IAQ_CO2 = 0;
-  }
+  // Calculate IAQ indexes and use the highest one
+  float IAQ_TVOC = TVOC_LR.calc(sgp30.TVOC);
+  float IAQ_CO2 = CO2_LR.calc(sgp30.eCO2);
 
 #ifdef DEBUG
   Serial.print("\tIAQ TVOC: ");
   Serial.print(IAQ_TVOC);
   Serial.print("\tIAQ CO2: ");
-  Serial.println(IAQ_CO2);
+  Serial.print(IAQ_CO2);
 #endif
 
   // Put the highest IAQ reading in VDD Voltage (0-1023) so in Loxone we get:
@@ -253,6 +266,14 @@ void loop() {
   // 10.23 -> 1023
   uint16_t IAQ_index = IAQ_TVOC > IAQ_CO2 ? IAQ_TVOC : IAQ_CO2;
   ds2438_sgp30->setVDDVoltage(IAQ_index);
+
+#ifdef DEBUG
+  unsigned long seconds_to_baseline = next_baseline;
+  seconds_to_baseline -= millis();
+  seconds_to_baseline /= 1000;
+  Serial.print("\tNext baseline in: ");
+  Serial.println(seconds_to_baseline);
+#endif
 
   // Done for now if it's not time for to record the baseline
   if (millis() < next_baseline) return;
