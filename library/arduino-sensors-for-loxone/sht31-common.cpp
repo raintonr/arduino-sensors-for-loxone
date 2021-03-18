@@ -49,7 +49,7 @@ void set_sht31_humidity(DS2438 *device, float humidity) {
   int16_t humidity_raw = humidity;
 #ifdef DEBUG
   Serial.print("\tRaw humidity: ");
-  Serial.println(humidity_raw);
+  Serial.print(humidity_raw);
 #endif
   device->setCurrent(humidity_raw);
 }
