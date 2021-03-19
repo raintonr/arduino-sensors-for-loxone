@@ -1,7 +1,7 @@
 #ifndef ONEWIRE_COMMON_H
 #define ONEWIRE_COMMON_H
 
-#define DEBUG
+// #define DEBUG
 
 #define MAX_ONEWIRE_SENSORS 10
 
