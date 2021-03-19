@@ -6,5 +6,6 @@
 
 void init_sgp30(Adafruit_SGP30 *sensor);
 void zero_sgp30_1w(DS2438 *device);
+boolean baseline_sgp30(Adafruit_SGP30 *sensor);
 
 #endif
