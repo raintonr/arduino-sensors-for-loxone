@@ -1,7 +1,3 @@
-// WORK IN PROGRESS!
-
-// A lot of this shamelessly copied from Adafruit examples... ahem... ;)
-
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <Wire.h>
@@ -20,13 +16,13 @@ Adafruit_SGP30 sgp30;
 // How often to take readings (in ms)
 #define READ_INTERVAL 3000
 
+// How many readings to take moving average over.
+// For a reading frequency in Loxone of 60s, 15 (45s worth) of readings sounds
+// good.
+#define MA_READINGS 15
+
 // How often to record the SGP30 baseline (in ms)
 #define BASELINE_INTERVAL 28800000  // 8 hours
-
-// Bytes 0-7 are reserved for 1 wire address so put define EEPROM address to
-// store baseline after that
-#define BASELINE_ADDRESS 16
-#define BASELINE_MARKER '@'
 
 // Init Hub
 OneWireHub hub = OneWireHub(PIN_ONE_WIRE);
@@ -36,6 +32,7 @@ OneWireHub hub = OneWireHub(PIN_ONE_WIRE);
 // - SHT31 temperature & humidity
 DS2438 *ds2438_sgp30, *ds2438_sht31;
 
+// Shamelessly copied from Adafruit examples... ahem... ;)
 /* return absolute humidity [mg/m^3] with approximation formula
  * @param temperature [°C]
  * @param humidity [%RH]
@@ -51,6 +48,46 @@ uint32_t getAbsoluteHumidity(float temperature, float humidity) {
   return absoluteHumidityScaled;
 }
 
+// Moving average instances for readings to output
+template <typename MA_Type, size_t MA_Count>
+class MovingAverageCalculator {
+ public:
+  // Process the given input and return the averaged output.
+  // If we try and keep a running total of floats over time this will eventually
+  // become inaccurate because of rounding so just do things brute force & store
+  // all the inputs then calculate the average... it's not like the CPU has
+  // anything better to do anyhow ;)
+  MA_Type operator()(MA_Type input) {
+    if (!init) {
+      for (int lp = 0; lp < MA_Count; lp++) {
+        ma_readings[lp] = input;
+      }
+      init = true;
+    } else {
+      if (++next_reading >= MA_Count) next_reading = 0;
+      ma_readings[next_reading] = input;
+    }
+
+    MA_Type output = 0;
+    for (int lp = 0; lp < MA_Count; lp++) {
+      output += ma_readings[lp];
+    }
+    return output / MA_Count;
+  }
+
+ private:
+  MA_Type ma_readings[MA_Count];
+  int next_reading = 0;
+  boolean init = false;
+};
+
+// Float averages just use float for their calculations
+MovingAverageCalculator<float, MA_READINGS> MA_temperature, MA_humidity;
+// The following are uint_16_t so use a uint32_t for calculations
+MovingAverageCalculator<uint32_t, MA_READINGS> MA_CO2, MA_TVOC;
+
+// One time setup function
+
 void setup() {
 #ifdef DEBUG
   Serial.begin(115200);
@@ -60,29 +97,6 @@ void setup() {
   error_flash(1000);
 
   init_sgp30(&sgp30);
-  int address = BASELINE_ADDRESS;
-  if (EEPROM.read(address++) == BASELINE_MARKER) {
-    // Looks like we have previously stored baseline available
-    uint16_t eCO2_base, TVOC_base;
-
-    eCO2_base = EEPROM.read(address + 1);
-    eCO2_base <<= 8;
-    eCO2_base += EEPROM.read(address);
-    address += 2;
-
-    TVOC_base = EEPROM.read(address + 1);
-    TVOC_base <<= 8;
-    TVOC_base += EEPROM.read(address);
-
-#ifdef DEBUG
-    Serial.print("Setting saved baseline values: eCO2: 0x");
-    Serial.print(eCO2_base, HEX);
-    Serial.print(" & TVOC: 0x");
-    Serial.println(TVOC_base, HEX);
-#endif
-
-    sgp30.setIAQBaseline(eCO2_base, TVOC_base);
-  }
 
   init_sht31(&sht31);
 
@@ -174,6 +188,13 @@ void loop() {
   float temperature, humidity;
   read_sht31(&sht31, &temperature, &humidity);
 
+  // Adjustment SGP30 for current humidity
+  sgp30.setHumidity(getAbsoluteHumidity(temperature, humidity));
+
+  // Smooth readings for output
+  temperature = MA_temperature(temperature);
+  humidity = MA_humidity(humidity);
+
 #ifdef DEBUG
   Serial.print("Temp: ");
   Serial.print(temperature);
@@ -185,23 +206,30 @@ void loop() {
   ds2438_sht31->setTemperature(temperature);
   set_sht31_humidity(ds2438_sht31, humidity);
 
-  // Adjustment SGP30 for current humidity
-  sgp30.setHumidity(getAbsoluteHumidity(temperature, humidity));
-
-  // And measure... in a loop until we get something good.
+  // Measure SGP30... in a loop until we get something good.
   while (!sgp30.IAQmeasure()) {
     // Something bad - flash LED
     error_flash(READ_INTERVAL - 100, 100);
 #ifdef DEBUG
     Serial.println("IAQmeasure failed");
 #endif
+    // Re-initialise before next attempt
+    init_sgp30(&sgp30);
   }
+
+  // Smooth readings
+  uint16_t eCO2 = MA_CO2(sgp30.eCO2);
+  uint16_t TVOC = MA_TVOC(sgp30.TVOC);
 
 #ifdef DEBUG
   Serial.print("\teCO2: ");
   Serial.print(sgp30.eCO2);
+  Serial.print("\tMA: ");
+  Serial.print(eCO2);
   Serial.print("\tTVOC: ");
   Serial.print(sgp30.TVOC);
+  Serial.print("\tMA: ");
+  Serial.print(TVOC);
 #endif
 
   // SGP30 returns:
@@ -215,35 +243,10 @@ void loop() {
   // - TVOC      -> Temperature (13 bit)
   // - IAQ index -> VDD Voltage (10 bit)
 
-  // CO2 goes into sensor's current (11 bits) but as minimal reading is 400,
-  // offset by that so in Loxone we get:
-  // -0.25 -> 400
-  // 0.25 -> 2447
-  int16_t eCO2 = sgp30.eCO2;
-  eCO2 -= 1423;  // 400 + 1023
-#ifdef DEBUG
-  Serial.print("\tDS2438 eCO2: ");
-  Serial.print(eCO2);
-#endif
-  ds2438_sgp30->setCurrent(eCO2);
-
-  // Scale TVOC to fit in sensor's temperature (-55 to 125)
-  // As temperature is 13 bit number that gives resolution of 0 to 8191
-  // So divide TVOC by 45.51 then subtract 55 so in Loxone we get:
-  // -55 -> 0
-  // 125 -> 8192
-  float TVOC = sgp30.TVOC;
-  TVOC /= 45.51;
-  TVOC -= 55;
-#ifdef DEBUG
-  Serial.print("\tDS2438 TVOC: ");
-  Serial.print(TVOC);
-#endif
-  ds2438_sgp30->setTemperature(TVOC);
-
-  // Calculate IAQ indexes and use the highest one
-  float IAQ_TVOC = TVOC_LR.calc(sgp30.TVOC);
-  float IAQ_CO2 = CO2_LR.calc(sgp30.eCO2);
+  // Calculate IAQ indexes and use the highest one.
+  // Do this before messing with scale, etc. of the values when they are stored.
+  float IAQ_TVOC = TVOC_LR.calc(TVOC);
+  float IAQ_CO2 = CO2_LR.calc(eCO2);
 
 #ifdef DEBUG
   Serial.print("\tIAQ TVOC: ");
@@ -258,6 +261,31 @@ void loop() {
   uint16_t IAQ_index = IAQ_TVOC > IAQ_CO2 ? IAQ_TVOC : IAQ_CO2;
   ds2438_sgp30->setVDDVoltage(IAQ_index);
 
+  // CO2 goes into sensor's current (11 bits) but as minimal reading is 400,
+  // offset by that so in Loxone we get:
+  // -0.25 -> 400
+  // 0.25 -> 2447
+  eCO2 -= 1423;  // 400 + 1023
+#ifdef DEBUG
+  Serial.print("\tDS2438 eCO2: ");
+  Serial.print(eCO2);
+#endif
+  ds2438_sgp30->setCurrent(eCO2);
+
+  // Scale TVOC to fit in sensor's temperature (-55 to 125)
+  // As temperature is 13 bit number that gives resolution of 0 to 8191
+  // So divide TVOC by 45.51 then subtract 55 so in Loxone we get:
+  // -55 -> 0
+  // 125 -> 8192
+  float fTVOC = TVOC;
+  fTVOC /= 45.51;
+  fTVOC -= 55;
+#ifdef DEBUG
+  Serial.print("\tDS2438 TVOC: ");
+  Serial.print(fTVOC);
+#endif
+  ds2438_sgp30->setTemperature(fTVOC);
+
 #ifdef DEBUG
   unsigned long seconds_to_baseline = next_baseline;
   seconds_to_baseline -= millis();
@@ -266,38 +294,11 @@ void loop() {
   Serial.println(seconds_to_baseline);
 #endif
 
-  // Done for now if it's not time for to record the baseline
-  if (millis() < next_baseline) return;
-
-  uint16_t eCO2_base, TVOC_base;
-  if (!sgp30.getIAQBaseline(&eCO2_base, &TVOC_base)) {
-    // Something bad - flash LED
-    error_flash(READ_INTERVAL - 100, 100);
-#ifdef DEBUG
-    Serial.println("getIAQBaseline failed");
-#endif
-    return;
+  // Save baseline if it's time
+  if (millis() > next_baseline &&  // Yes it's time
+      baseline_sgp30(&sgp30)       // Yes, save worked
+  ) {
+    // Saved baseline - set timestamp for next one
+    next_baseline = this_stamp + BASELINE_INTERVAL;
   }
-
-#ifdef DEBUG
-  Serial.print("Baseline values: eCO2: 0x");
-  Serial.print(eCO2_base, HEX);
-  Serial.print(" & TVOC: 0x");
-  Serial.println(TVOC_base, HEX);
-#endif
-
-  // OK, got a good baseline - set timestamp for next one
-  next_baseline = this_stamp + BASELINE_INTERVAL;
-
-  // And stash in EEPROM
-  int address = BASELINE_ADDRESS;
-  EEPROM.update(address++, BASELINE_MARKER);  // Indicator the following is value is good
-
-  EEPROM.update(address++, eCO2_base & 0xff);
-  eCO2_base >>= 8;
-  EEPROM.update(address++, eCO2_base & 0xff);
-
-  EEPROM.update(address++, TVOC_base & 0xff);
-  TVOC_base >>= 8;
-  EEPROM.update(address++, TVOC_base & 0xff);
 }
