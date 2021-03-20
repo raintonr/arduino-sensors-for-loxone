@@ -1,5 +1,6 @@
 #include <EEPROM.h>
 #include <TrueRandom.h>
+#include <asfl-common.h>
 #include <onewire-common.h>
 
 void get_address(uint8_t *addr_1w) {

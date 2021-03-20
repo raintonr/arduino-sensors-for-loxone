@@ -1,6 +1,8 @@
 #ifndef ASFL_COMMON_H
 #define ASFL_COMMON_H
 
+// #define DEBUG
+
 #include <Arduino.h>
 
 void error_flash(uint16_t ms);
