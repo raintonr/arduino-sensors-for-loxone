@@ -18,8 +18,9 @@ class MovingAverageCalculator {
  private:
   int MovingAverageCalculator::new_reading(int input);
   long total;
-  int output;
-  int readings;
+  int *readings;
+  int num_readings;
+  int next_reading;
   int float_factor;
   boolean init;
 };
