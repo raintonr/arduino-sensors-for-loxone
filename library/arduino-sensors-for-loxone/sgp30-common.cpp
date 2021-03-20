@@ -1,4 +1,5 @@
 #include <EEPROM.h>
+#include <asfl-common.h>
 #include <onewire-common.h>
 #include <sgp30-common.h>
 

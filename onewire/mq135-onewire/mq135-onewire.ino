@@ -1,6 +1,7 @@
 #include <DS18B20.h>
 
 // To turn on DEBUG, define it in the common header:
+#include <asfl-common.h>
 #include <onewire-common.h>
 
 // 1-Wire pin

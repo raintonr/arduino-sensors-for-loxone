@@ -3,6 +3,7 @@
 #include <Wire.h>
 
 // To turn on DEBUG, define it in the common header:
+#include <asfl-common.h>
 #include <onewire-common.h>
 #include <sgp30-common.h>
 #include <sht31-common.h>
@@ -14,12 +15,12 @@ Adafruit_SGP30 sgp30;
 #define PIN_ONE_WIRE 11
 
 // How often to take readings (in ms)
-#define READ_INTERVAL 3000
+#define READ_INTERVAL 5000
 
 // How many readings to take moving average over.
-// For a reading frequency in Loxone of 60s, 15 (45s worth) of readings sounds
+// For a reading frequency in Loxone of 60s, 30s worth of readings sounds
 // good.
-#define MA_READINGS 15
+#define MA_READINGS 2
 
 // How often to record the SGP30 baseline (in ms)
 #define BASELINE_INTERVAL 28800000  // 8 hours
@@ -48,43 +49,11 @@ uint32_t getAbsoluteHumidity(float temperature, float humidity) {
   return absoluteHumidityScaled;
 }
 
-// Moving average instances for readings to output
-template <typename MA_Type, size_t MA_Count>
-class MovingAverageCalculator {
- public:
-  // Process the given input and return the averaged output.
-  // If we try and keep a running total of floats over time this will eventually
-  // become inaccurate because of rounding so just do things brute force & store
-  // all the inputs then calculate the average... it's not like the CPU has
-  // anything better to do anyhow ;)
-  MA_Type operator()(MA_Type input) {
-    if (!init) {
-      for (int lp = 0; lp < MA_Count; lp++) {
-        ma_readings[lp] = input;
-      }
-      init = true;
-    } else {
-      if (++next_reading >= MA_Count) next_reading = 0;
-      ma_readings[next_reading] = input;
-    }
+// Calculators for moving averages - initialised in setup
+MovingAverageCalculator *MA_temperature, *MA_humidity, *MA_CO2, *MA_TVOC;
 
-    MA_Type output = 0;
-    for (int lp = 0; lp < MA_Count; lp++) {
-      output += ma_readings[lp];
-    }
-    return output / MA_Count;
-  }
-
- private:
-  MA_Type ma_readings[MA_Count];
-  int next_reading = 0;
-  boolean init = false;
-};
-
-// Float averages just use float for their calculations
-MovingAverageCalculator<float, MA_READINGS> MA_temperature, MA_humidity;
-// The following are uint_16_t so use a uint32_t for calculations
-MovingAverageCalculator<uint32_t, MA_READINGS> MA_CO2, MA_TVOC;
+// And for logarithmic regression (see setup comments)
+LogarithmicRegressionCalculator *LR_TVOC, *LR_CO2;
 
 // One time setup function
 
@@ -95,6 +64,33 @@ void setup() {
 #endif
 
   error_flash(1000);
+
+  // Setup moving average calculators
+  MA_temperature = new MovingAverageCalculator(MA_READINGS, 2);
+  MA_humidity = new MovingAverageCalculator(MA_READINGS, 2);
+  MA_CO2 = new MovingAverageCalculator(MA_READINGS);
+  MA_TVOC = new MovingAverageCalculator(MA_READINGS);
+
+  // To calculate an Indoor Air Quality (IAQ) index from 0-500...
+  //
+  //      TVOC (ppb): 100 333 1000 3333 8332
+  // Maps to our IAQ: 10 100 200 300 400
+  //
+  //       CO2 (ppm): 400 600 1000 1500 2500
+  // Maps to our IAQ: 10 100 200 300 400
+  //
+  // This is basically the bands from Awair:
+  //
+  // https://support.getawair.com/hc/en-us/articles/360039242373-Air-Quality-Factors-Measured-By-Awair-Element
+  //
+  // Use a functional approximation calculator to convert the above tables
+  // into approximation for our IAQ. This yields:
+  // - TVOC IAQ = -402.3294+87.6842*ln(x)
+  // - CO2 IAQ = -1269.4589+213.6673*ln(x)
+  //
+
+  LR_TVOC = new LogarithmicRegressionCalculator(-402.3294, 87.6842);
+  LR_CO2 = new LogarithmicRegressionCalculator(-1269.4589, 213.6673);
 
   init_sgp30(&sgp30);
 
@@ -121,51 +117,6 @@ void setup() {
   hub.attach(*ds2438_sht31);
 }
 
-// Class to perform Logarithmic regression
-
-class LogarithmicRegressionCalculator {
-  float add, mult;
-
- public:
-  LogarithmicRegressionCalculator(float add_init, float mult_init) {
-    add = add_init;
-    mult = mult_init;
-  }
-
- public:
-  float calc(float x) {
-    float y = 0;
-    if (x > 0) {
-      y = log(x);
-      y *= mult;
-      y += add;
-      if (y < 0) y = 0;
-    }
-    return y;
-  }
-};
-
-// To calculate an Indoor Air Quality (IAQ) index from 0-500...
-//
-//      TVOC (ppb): 100 333 1000 3333 8332
-// Maps to our IAQ: 10 100 200 300 400
-//
-//       CO2 (ppm): 400 600 1000 1500 2500
-// Maps to our IAQ: 10 100 200 300 400
-//
-// This is basically the bands from Awair:
-//
-// https://support.getawair.com/hc/en-us/articles/360039242373-Air-Quality-Factors-Measured-By-Awair-Element
-//
-// Use a functional approximation calculator to convert the above tables
-// into approximation for our IAQ. This yields:
-// - TVOC IAQ = -402.3294+87.6842*ln(x)
-// - CO2 IAQ = -1269.4589+213.6673*ln(x)
-//
-
-LogarithmicRegressionCalculator TVOC_LR(-402.3294, 87.6842);
-LogarithmicRegressionCalculator CO2_LR(-1269.4589, 213.6673);
-
 // Main loop
 
 // Always read immediately
@@ -191,14 +142,21 @@ void loop() {
   // Adjustment SGP30 for current humidity
   sgp30.setHumidity(getAbsoluteHumidity(temperature, humidity));
 
+#ifdef DEBUG
+  Serial.print("T: ");
+  Serial.print(temperature);
+  Serial.print("\tH: ");
+  Serial.print(humidity);
+#endif
+
   // Smooth readings for output
-  temperature = MA_temperature(temperature);
-  humidity = MA_humidity(humidity);
+  temperature = MA_temperature->sample(temperature);
+  humidity = MA_humidity->sample(humidity);
 
 #ifdef DEBUG
-  Serial.print("Temp: ");
+  Serial.print("\tT: ");
   Serial.print(temperature);
-  Serial.print("\tHum: ");
+  Serial.print("\tH: ");
   Serial.print(humidity);
 #endif
 
@@ -218,8 +176,8 @@ void loop() {
   }
 
   // Smooth readings
-  uint16_t eCO2 = MA_CO2(sgp30.eCO2);
-  uint16_t TVOC = MA_TVOC(sgp30.TVOC);
+  uint16_t eCO2 = MA_CO2->sample(sgp30.eCO2);
+  uint16_t TVOC = MA_TVOC->sample(sgp30.TVOC);
 
 #ifdef DEBUG
   Serial.print("\teCO2: ");
@@ -245,8 +203,8 @@ void loop() {
 
   // Calculate IAQ indexes and use the highest one.
   // Do this before messing with scale, etc. of the values when they are stored.
-  float IAQ_TVOC = TVOC_LR.calc(TVOC);
-  float IAQ_CO2 = CO2_LR.calc(eCO2);
+  float IAQ_TVOC = LR_TVOC->calc(TVOC);
+  float IAQ_CO2 = LR_CO2->calc(eCO2);
 
 #ifdef DEBUG
   Serial.print("\tIAQ TVOC: ");
