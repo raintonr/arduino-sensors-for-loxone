@@ -14,6 +14,16 @@ void init_sht31(Adafruit_SHT31 *sensor) {
 }
 
 void read_sht31(Adafruit_SHT31 *sensor, float *temperature, float *humidity) {
+  // Make sure heater is always off
+  if (sensor->isHeaterEnabled()) {
+#ifdef DEBUG
+    Serial.println("Whoa, SHT31 heater is on - turning off");
+#endif
+    sensor->heater(false);
+    // And wait for 10s
+    error_flash(10000);
+  }
+
   // Read sensor in a loop until good reading is found. This way, if the SHT
   // sensor fails we will not respond to 1-Wire bus with bad data and master
   // will know something is wrong.
@@ -25,7 +35,7 @@ void read_sht31(Adafruit_SHT31 *sensor, float *temperature, float *humidity) {
       // Something bad - flash LED
       error_flash(500);
 #ifdef DEBUG
-      Serial.println("Failed to read sensor");
+      Serial.println("Failed to read SHT31");
 #endif
     } else {
       good_reading = true;
