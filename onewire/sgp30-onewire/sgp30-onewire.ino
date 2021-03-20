@@ -20,7 +20,7 @@ Adafruit_SGP30 sgp30;
 // How many readings to take moving average over.
 // For a reading frequency in Loxone of 60s, 30s worth of readings sounds
 // good.
-#define MA_READINGS 2
+#define MA_READINGS 6
 
 // How often to record the SGP30 baseline (in ms)
 #define BASELINE_INTERVAL 28800000  // 8 hours
@@ -176,8 +176,8 @@ void loop() {
   }
 
   // Smooth readings
-  uint16_t eCO2 = MA_CO2->sample(sgp30.eCO2);
-  uint16_t TVOC = MA_TVOC->sample(sgp30.TVOC);
+  int eCO2 = MA_CO2->sample(sgp30.eCO2);
+  int TVOC = MA_TVOC->sample(sgp30.TVOC);
 
 #ifdef DEBUG
   Serial.print("\teCO2: ");
