@@ -3,6 +3,9 @@
 #include <sht31-common.h>
 
 void init_sht31(Adafruit_SHT31 *sensor) {
+#ifdef DEBUG
+    Serial.println("Init SHT31");
+#endif
   // In case sensor is not connected at startup, loop round looking for it
   // Set to 0x45 for alternate i2c addr
   while (!sensor->begin(0x44)) {
@@ -11,6 +14,9 @@ void init_sht31(Adafruit_SHT31 *sensor) {
 #endif
     error_flash(500);
   }
+#ifdef DEBUG
+    Serial.println("SHT31 started");
+#endif
 }
 
 void read_sht31(Adafruit_SHT31 *sensor, float *temperature, float *humidity) {
