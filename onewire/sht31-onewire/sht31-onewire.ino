@@ -2,6 +2,7 @@
 #include <DS2438.h>
 
 // To turn on DEBUG, define it in the common header:
+#include <asfl-common.h>
 #include <onewire-common.h>
 #include <sht31-common.h>
 
@@ -32,10 +33,10 @@ struct Reading {
 };
 struct Reading deltas[DELTA_COUNT];
 
-// Init SHT31
-Adafruit_SHT31 sht31 = Adafruit_SHT31();
+// Sensor
+Adafruit_SHT31 sht31;
 
-// Init Hub
+// OneWire
 OneWireHub hub = OneWireHub(PIN_ONE_WIRE);
 DS2438 *ds2438;
 
