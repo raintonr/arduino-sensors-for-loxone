@@ -15,12 +15,12 @@ Adafruit_SGP30 sgp30;
 #define PIN_ONE_WIRE 11
 
 // How often to take readings (in ms)
-#define READ_INTERVAL 5000
+#define READ_INTERVAL 10000
 
 // How many readings to take moving average over.
-// For a reading frequency in Loxone of 60s, 30s worth of readings sounds
-// good.
-#define MA_READINGS 6
+// A good reading frequency in Loxone is 60s, but sensor can return 'spikey'
+// readings so 2-3 minutes is a good moving average period to smooth them.
+#define MA_READINGS 18
 
 // How often to record the SGP30 baseline (in ms)
 #define BASELINE_INTERVAL 28800000  // 8 hours
