@@ -1,6 +1,6 @@
 #include <asfl-common.h>
 
-// Flash our LED to indicate an error
+// Flash our LED to indicate an error/status
 
 void error_flash(uint16_t ms) {
   unsigned long stopFlash = millis() + ms;
