@@ -89,6 +89,10 @@ void init_sht31() {
 }
 
 void read_sht31(float *temperature, float *humidity) {
+  // Blank out to be sure we only use actual readings
+  *temperature = NAN;
+  *humidity = NAN;
+
   // Make sure heater is always off
 #ifdef USE_ADAFRUIT_SHT31
   if (sht31.isHeaterEnabled()) {
