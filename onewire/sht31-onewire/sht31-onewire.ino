@@ -156,6 +156,7 @@ void loop() {
 #endif
 
   float temperature, humidity;
+  error_flash(100);
   read_sht31(&temperature, &humidity);
 
   if (first) {
