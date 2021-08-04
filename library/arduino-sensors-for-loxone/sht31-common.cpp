@@ -2,13 +2,17 @@
 #include <onewire-common.h>
 #include <sht31-common.h>
 
-void init_sht31(Adafruit_SHT31 *sensor) {
+#ifdef USE_ADAFRUIT_SHT31
+  Adafruit_SHT31 sht31;
+#endif
+
+void init_sht31() {
 #ifdef DEBUG
     Serial.println("Init SHT31");
 #endif
   // In case sensor is not connected at startup, loop round looking for it
   // Set to 0x45 for alternate i2c addr
-  while (!sensor->begin(0x44)) {
+  while (!sht31.begin(0x44)) {
 #ifdef DEBUG
     Serial.println("Couldn't find SHT31");
 #endif
@@ -19,13 +23,13 @@ void init_sht31(Adafruit_SHT31 *sensor) {
 #endif
 }
 
-void read_sht31(Adafruit_SHT31 *sensor, float *temperature, float *humidity) {
+void read_sht31(float *temperature, float *humidity) {
   // Make sure heater is always off
-  if (sensor->isHeaterEnabled()) {
+  if (sht31.isHeaterEnabled()) {
 #ifdef DEBUG
     Serial.println("Whoa, SHT31 heater is on - turning off");
 #endif
-    sensor->heater(false);
+    sht31.heater(false);
     // And wait for 10s
     error_flash(10000);
   }
@@ -35,8 +39,8 @@ void read_sht31(Adafruit_SHT31 *sensor, float *temperature, float *humidity) {
   // will know something is wrong.
   boolean good_reading = false;
   do {
-    *temperature = sensor->readTemperature();
-    *humidity = sensor->readHumidity();
+    *temperature = sht31.readTemperature();
+    *humidity = sht31.readHumidity();
     if (isnan(*temperature) || isnan(*humidity)) {
       // Something bad - flash LED
       error_flash(500);

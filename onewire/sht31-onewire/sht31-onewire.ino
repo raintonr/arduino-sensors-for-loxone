@@ -33,9 +33,6 @@ struct Reading {
 };
 struct Reading deltas[DELTA_COUNT];
 
-// Sensor
-Adafruit_SHT31 sht31;
-
 // OneWire
 OneWireHub hub = OneWireHub(PIN_ONE_WIRE);
 DS2438 *ds2438;
@@ -52,7 +49,7 @@ void setup() {
 
   error_flash(1000);
 
-  init_sht31(&sht31);
+  init_sht31();
 
   // 1W address
   uint8_t addr_1w[7];
@@ -159,7 +156,7 @@ void loop() {
 #endif
 
   float temperature, humidity;
-  read_sht31(&sht31, &temperature, &humidity);
+  read_sht31(&temperature, &humidity);
 
   if (first) {
     // Fill up the delta buffer with initial values
