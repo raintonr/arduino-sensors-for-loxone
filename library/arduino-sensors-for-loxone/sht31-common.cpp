@@ -20,13 +20,18 @@ Adafruit_SHT31 sht31;
 #include <BitBang_I2C.h>
 BBI2C bbi2c;
 #define SHT31_I2C_ADDRESS 0x44
-#define I2C_SDA_PIN 16
-#define I2C_SCL_PIN 17
+#define I2C_SDA_PIN 11
+#define I2C_SCL_PIN 12
 #define I2C_CLOCK_FREQUENCY 100000
 
 // Stolen from Adafruit SHT31 code
 uint8_t readbuffer[6];
 uint8_t SHT31_MEAS_HIGHREP[] = {0x24, 0x00};
+uint8_t SHT31_READSTATUS[] = {0xF3, 0x2D};
+uint8_t SHT31_HEATEREN[] = {0x30, 0x6D};  /**< Heater Enable */
+uint8_t SHT31_HEATERDIS[] = {0x30, 0x66}; /**< Heater Disable */
+#define SHT31_REG_MSB_HEATER_BITMASK 0x20 /**< Status Register Heater Bit */
+
 static uint8_t crc8(const uint8_t *data, int len) {
   /*
    *
@@ -50,6 +55,40 @@ static uint8_t crc8(const uint8_t *data, int len) {
     }
   }
   return crc;
+}
+
+bool isHeaterEnabled() {
+  I2CWrite(&bbi2c, SHT31_I2C_ADDRESS, SHT31_READSTATUS,
+           sizeof(SHT31_READSTATUS));
+  delay(20);
+
+  uint8_t readbuffer[3];
+  if (I2CRead(&bbi2c, SHT31_I2C_ADDRESS, readbuffer, sizeof(readbuffer))) {
+    if (readbuffer[2] != crc8(readbuffer, 2)) {
+      error_flash(3000);
+    } else {
+#ifdef DEBUG
+      Serial.print("Read status: ");
+      Serial.print(readbuffer[0], HEX);
+      Serial.print("/");
+      Serial.println(readbuffer[1], HEX);
+#endif
+
+      return readbuffer[0] & SHT31_REG_MSB_HEATER_BITMASK;
+    }
+  }
+}
+
+void heater(bool heater_on) {
+  if (heater_on) {
+    I2CWrite(&bbi2c, SHT31_I2C_ADDRESS, SHT31_HEATEREN, sizeof(SHT31_HEATEREN));
+
+  } else {
+    I2CWrite(&bbi2c, SHT31_I2C_ADDRESS, SHT31_HEATERDIS,
+             sizeof(SHT31_HEATERDIS));
+  }
+
+  delay(10);
 }
 
 #endif /* USE_BITBANG_SHT31 */
@@ -76,12 +115,7 @@ void init_sht31() {
   bbi2c.iSCL = I2C_SCL_PIN;
   I2CInit(&bbi2c, I2C_CLOCK_FREQUENCY);
   delay(100);  // allow devices to power up
-  int discoveredDevice = I2CDiscoverDevice(&bbi2c, SHT31_I2C_ADDRESS);
-#ifdef DEBUG
-  Serial.print("Discovered device: ");
-  Serial.println(discoveredDevice);
-#endif /* DEBUG */
-#endif /* USE_BITBANG_SHT31 */
+#endif         /* USE_BITBANG_SHT31 */
 
 #ifdef DEBUG
   Serial.println("SHT31 started");
@@ -94,16 +128,26 @@ void read_sht31(float *temperature, float *humidity) {
   *humidity = NAN;
 
   // Make sure heater is always off
+  if (
 #ifdef USE_ADAFRUIT_SHT31
-  if (sht31.isHeaterEnabled()) {
+      sht31.isHeaterEnabled()
+#endif /* USE_ADAFRUIT_SHT31 */
+#ifdef USE_BITBANG_SHT31
+      isHeaterEnabled()
+#endif /*USE_BITBANG_SHT31 */
+  ) {
 #ifdef DEBUG
     Serial.println("Whoa, SHT31 heater is on - turning off");
 #endif
+#ifdef USE_ADAFRUIT_SHT31
     sht31.heater(false);
+#endif
+#ifdef USE_BITBANG_SHT31
+    heater(false);
+#endif
     // And wait for 10s
     error_flash(10000);
   }
-#endif
 
   // Read sensor in a loop until good reading is found. This way, if the SHT
   // sensor fails we will not respond to 1-Wire bus with bad data and master
@@ -124,6 +168,7 @@ void read_sht31(float *temperature, float *humidity) {
       // Stolen from Adafruit library
       if (readbuffer[2] != crc8(readbuffer, 2) ||
           readbuffer[5] != crc8(readbuffer + 3, 2)) {
+        error_flash(3000);
       } else {
         int32_t stemp =
             (int32_t)(((uint32_t)readbuffer[0] << 8) | readbuffer[1]);
@@ -143,10 +188,11 @@ void read_sht31(float *temperature, float *humidity) {
 
     if (isnan(*temperature) || isnan(*humidity)) {
       // Something bad - flash LED
-      error_flash(500);
 #ifdef DEBUG
       Serial.println("Failed to read SHT31");
 #endif
+      error_flash(500);
+      delay(1000);
     } else {
 #ifdef DEBUG
       Serial.print("Read SHT31: ");
