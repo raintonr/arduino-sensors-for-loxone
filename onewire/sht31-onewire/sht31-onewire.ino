@@ -7,7 +7,7 @@
 #include <sht31-common.h>
 
 // 1-Wire pin
-#define PIN_ONE_WIRE 11
+#define PIN_ONE_WIRE 10
 
 // How often to take readings (in ms)
 #define READ_INTERVAL 3000
@@ -62,6 +62,9 @@ void setup() {
 #endif
   zero_sht31_1w(ds2438);
   hub.attach(*ds2438);
+#ifdef DEBUG
+  Serial.println("Init done");
+#endif
 }
 
 // Function to return number of next/prev slots (just inc/dec but account for
